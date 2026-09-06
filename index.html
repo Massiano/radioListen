@@ -50,7 +50,7 @@ $('go').onclick=async()=>{
 };
 function render(){$('peers').textContent=Object.values(peers).map(p=>(p.speaking?'▶ ':'  ')+p.name+(p.me?' (you)':'')).join('\n')}
 let statLog=[];function stat(s){statLog.unshift(s);statLog=statLog.slice(0,5);$('stats').textContent=statLog.join('\n')}
-async function pollStats(){try{let n=api.getNumberOfParticipants();let q=await api.getParticipantsInfo();stat('participants '+n+' mode '+cfg.mode+' domain '+cfg.domain)}catch(e){}}
+async function pollStats(){try{let n=api.getNumberOfParticipants();stat('participants '+n+' mode '+cfg.mode+' domain '+cfg.domain)}catch(e){}}
 $('mic').onclick=()=>api.executeCommand('toggleAudio');
 $('cam').onclick=()=>api.executeCommand('toggleVideo');
 $('tab').onclick=()=>api.executeCommand('toggleShareScreen');
