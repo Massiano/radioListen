@@ -1,0 +1,59 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=960"><title>callRoom · jitsi</title>
+<style>
+html,body{margin:0;background:#1c1f24;color:#d8dbe0;font:14px/1.3 sans-serif;overflow:hidden}
+#stage{position:absolute;left:0;top:0;width:960px;height:560px;background:#000}
+#stage iframe{position:absolute;left:0;top:0;width:100%;height:100%;border:0}
+#bar{position:absolute;left:0;top:560px;width:960px;height:44px;background:#12141a}
+#bar button{position:absolute;top:7px;height:30px;width:80px;border:1px solid #444;background:#2a2e36;color:#d8dbe0;cursor:pointer}
+#bar button.off{background:#5a2323}
+#mic{left:8px}#cam{left:96px}#tab{left:184px}#leave{left:272px;background:#3a2020}
+#peers{position:absolute;left:0;top:604px;width:640px;height:100px;overflow:auto;padding:6px;box-sizing:border-box;white-space:pre}
+#stats{position:absolute;left:640px;top:604px;width:320px;height:100px;padding:6px;box-sizing:border-box;white-space:pre;color:#8a9;border-left:1px solid #333}
+#gate{position:absolute;left:0;top:0;width:960px;height:704px;background:#1c1f24}
+#gate div{position:absolute;left:280px;top:220px;width:400px}
+#gate input{width:260px;height:28px;background:#2a2e36;border:1px solid #444;color:#d8dbe0;padding:0 6px;box-sizing:border-box}
+#gate button{width:120px;height:30px;margin-left:8px;background:#2a2e36;border:1px solid #444;color:#d8dbe0;cursor:pointer}
+#gate p{color:#889;margin:12px 0 0}
+</style></head><body>
+<div id="stage"></div>
+<div id="bar"><button id="mic">mic</button><button id="cam">cam</button><button id="tab">share tab</button><button id="leave">leave</button></div>
+<div id="peers"></div><div id="stats"></div>
+<div id="gate"><div><input id="name" placeholder="your name" maxlength="32"><button id="go">join</button><p id="hint"></p></div></div>
+<script>
+const $=id=>document.getElementById(id);
+let room,token,api,cfg,muted={a:false,v:false},peers={},t0;
+async function boot(){
+  let h=location.hash.slice(1).split('.');
+  if(h.length!==2){let r=await (await fetch('/api/newroom')).json(); location.hash=r.room+'.'+r.token; h=[r.room,r.token]}
+  room=h[0]; token=h[1]; $('name').value=localStorage.name||''; if(/Mobi|Android/.test(navigator.userAgent))$('tab').style.display='none';
+  $('hint').textContent='room '+room+' — share this URL';
+}
+$('go').onclick=async()=>{
+  let name=$('name').value.trim()||'guest'; localStorage.name=name;
+  let r=await fetch('/api/jitsi/'+room+'?token='+token+'&name='+encodeURIComponent(name)); if(!r.ok){$('hint').textContent='bad room token';return}
+  cfg=await r.json(); await new Promise((ok,err)=>{let s=document.createElement('script');s.src='https://'+cfg.domain+'/external_api.js';s.onload=ok;s.onerror=err;document.head.appendChild(s)});
+  $('gate').style.display='none'; t0=performance.now();
+  api=new JitsiMeetExternalAPI(cfg.domain,{roomName:cfg.roomName,parentNode:$('stage'),jwt:cfg.jwt||undefined,userInfo:{displayName:name},
+    configOverwrite:{prejoinConfig:{enabled:false},startWithAudioMuted:false,disableDeepLinking:true,resolution:240,constraints:{video:{height:{ideal:240,max:240,min:120}}}},
+    interfaceConfigOverwrite:{TOOLBAR_BUTTONS:[]}});
+  api.addListener('videoConferenceJoined',e=>{peers[e.id]={name:name,me:true};stat('joined in '+((performance.now()-t0)|0)+'ms');render()});
+  api.addListener('participantJoined',e=>{peers[e.id]={name:e.displayName||'?'};render()});
+  api.addListener('participantLeft',e=>{delete peers[e.id];render()});
+  api.addListener('displayNameChange',e=>{if(peers[e.id])peers[e.id].name=e.displayname;render()});
+  api.addListener('audioMuteStatusChanged',e=>{muted.a=e.muted;$('mic').classList.toggle('off',e.muted)});
+  api.addListener('videoMuteStatusChanged',e=>{muted.v=e.muted;$('cam').classList.toggle('off',e.muted)});
+  api.addListener('dominantSpeakerChanged',e=>{for(let p in peers)peers[p].speaking=p===e.id;render()});
+  api.addListener('videoConferenceLeft',()=>location.reload());
+  api.addListener('readyToClose',()=>location.reload());
+  setInterval(pollStats,2000);
+};
+function render(){$('peers').textContent=Object.values(peers).map(p=>(p.speaking?'▶ ':'  ')+p.name+(p.me?' (you)':'')).join('\n')}
+let statLog=[];function stat(s){statLog.unshift(s);statLog=statLog.slice(0,5);$('stats').textContent=statLog.join('\n')}
+async function pollStats(){try{let n=api.getNumberOfParticipants();let q=await api.getParticipantsInfo();stat('participants '+n+' mode '+cfg.mode+' domain '+cfg.domain)}catch(e){}}
+$('mic').onclick=()=>api.executeCommand('toggleAudio');
+$('cam').onclick=()=>api.executeCommand('toggleVideo');
+$('tab').onclick=()=>api.executeCommand('toggleShareScreen');
+$('leave').onclick=()=>api.executeCommand('hangup');
+boot();
+</script></body></html>
