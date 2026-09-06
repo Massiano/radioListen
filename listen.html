@@ -1,0 +1,33 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=480"><title>listen</title>
+<style>
+body{margin:0;background:#1c1f24;color:#d8dbe0;font:14px/1.4 sans-serif}
+#box{position:absolute;left:20px;top:20px;width:440px}
+button{height:40px;width:160px;background:#2a2e36;border:1px solid #444;color:#d8dbe0;cursor:pointer;font-size:16px}
+#log{white-space:pre;margin-top:16px;color:#8a9}
+</style></head><body><div id="box">
+<button id="go">listen</button>
+<div id="log"></div>
+</div><script>
+const $=id=>document.getElementById(id);const r=new URLSearchParams(location.search).get('r')||'';
+let audio,ms,sb,q=[],ws,got=0;
+function log(s){$('log').textContent=s}
+function pump(){if(!sb||sb.updating||!q.length)return;try{sb.appendBuffer(q.shift())}catch(e){log('append error: '+e.message)}}
+$('go').onclick=()=>{
+  if(!r){log('no room in url (?r=name)');return}
+  $('go').disabled=true;audio=new Audio();ms=new MediaSource();audio.src=URL.createObjectURL(ms);
+  ms.addEventListener('sourceopen',()=>{
+    sb=ms.addSourceBuffer('audio/webm;codecs=opus');sb.mode='sequence';sb.addEventListener('updateend',pump);
+    ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws/down/'+encodeURIComponent(r));ws.binaryType='arraybuffer';
+    ws.onmessage=e=>{q.push(e.data);got+=e.data.byteLength;pump();if(audio.paused)audio.play().catch(()=>{})};
+    ws.onclose=()=>log('stream ended');
+  });
+  setInterval(()=>{
+    if(!sb||!audio.buffered.length)return;
+    let end=audio.buffered.end(audio.buffered.length-1),lag=end-audio.currentTime;
+    if(lag>2)audio.currentTime=end-0.7;
+    if(end>30&&!sb.updating){try{sb.remove(0,end-15)}catch(e){}}
+    log('room '+r+' · received '+(got/1024|0)+' KB · lag '+lag.toFixed(2)+'s');
+  },1000);
+};
+</script></body></html>
